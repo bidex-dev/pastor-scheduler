@@ -143,6 +143,12 @@
         <option value="Normal">Normal</option>
         <option value="High">High Priority</option>
       </select>
+      <select id="recurrence" title="Recurring Event">
+        <option value="none">One-time (No Repeat)</option>
+        <option value="daily">Repeat Daily</option>
+        <option value="weekly">Repeat Weekly</option>
+        <option value="monthly">Repeat Monthly</option>
+      </select>
       <button type="submit">Add Task</button>
     </form>
     <h2>Scheduled Activities</h2>
@@ -151,13 +157,12 @@
     <div class="subscribe-box" id="subscribeBox">
       <strong>Upgrade for Full Access</strong>
       <div style="font-size:.96rem; margin-top:3px">
-        Enjoy unlimited tasks and premium features.
+        Enjoy unlimited tasks, recurring events, and reminders.
       </div>
       <a class="subscribe-btn" href="https://flutterwave.com/pay/rhrf1i0bzpkh" target="_blank" id="fwPayBtn">
         Subscribe with Flutterwave
       </a>
-      <div style="color:#888; font-size:.96em;margin-top:6px" id="subscriptionStatus">
-</div>
+      <div style="color:#888; font-size:.96em;margin-top:6px" id="subscriptionStatus"></div>
     </div>
   </div>
   <script>
@@ -165,6 +170,7 @@
     const taskList = document.getElementById('taskList');
     const fwPayBtn = document.getElementById('fwPayBtn');
     const subscriptionStatus = document.getElementById('subscriptionStatus');
+    const recurrenceSelect = document.getElementById('recurrence');
 
     // Read subscription status from localStorage (simulate subscription)
     let subscribed = localStorage.getItem('pastorSubscribed') === 'true';
@@ -174,6 +180,7 @@
 
     renderTasks();
     updateSubscriptionUI();
+    scheduleReminders();
 
     taskForm.onsubmit = function(e) {
       e.preventDefault();
@@ -182,22 +189,62 @@
         alert('Free plan limit reached (5 tasks). Please subscribe to add unlimited tasks!');
         return;
       }
+      
+      const recurrence = recurrenceSelect.value;
+      if (recurrence !== 'none' && !subscribed) {
+        alert('Recurring events are a premium feature. Please subscribe to use this.');
+        return;
+      }
 
-      const task = {
+      // Create task and handle recurrence
+      const baseTask = {
         title: document.getElementById('title').value.trim(),
         desc: document.getElementById('desc').value.trim(),
         date: document.getElementById('date').value,
         time: document.getElementById('time').value,
         priority: document.getElementById('priority').value,
+        recurrence,
         done: false,
         id: Date.now()
       };
 
-      tasks.push(task);
+      if (recurrence === 'none') {
+        tasks.push(baseTask);
+      } else {
+        // For demo, add tasks for next 6 occurrences:
+        const occurrences = getRecurringDates(baseTask.date, recurrence, 6);
+        occurrences.forEach((date, idx) => {
+          const recurringTask = { ...baseTask, date, id: baseTask.id + '-' + idx };
+          tasks.push(recurringTask);
+        });
+      }
+
       localStorage.setItem('pastorSchedulerTasks', JSON.stringify(tasks));
       renderTasks();
       taskForm.reset();
+      scheduleReminders();
     };
+
+    function getRecurringDates(startDateStr, recurrence, count) {
+      const dates = [];
+      let date = new Date(startDateStr);
+      for (let i=0; i<count; i++) {
+        dates.push(date.toISOString().slice(0,10));
+        date = new Date(date);
+        switch(recurrence) {
+          case 'daily':
+            date.setDate(date.getDate() + 1);
+            break;
+          case 'weekly':
+            date.setDate(date.getDate() + 7);
+            break;
+          case 'monthly':
+            date.setMonth(date.getMonth() + 1);
+            break;
+        }
+      }
+      return dates;
+    }
 
     function renderTasks() {
       if (!tasks.length) {
@@ -217,10 +264,13 @@
               <div style="font-size:13px; margin:2px 0 4px 0; color:#444;">
                 ${task.desc ? task.desc : ''}
               </div>
-              <div style="font-size:12px; color: #35358e;"><b>Date:</b> ${task.date} <b>Time:</b> ${task.time}</div>
+              <div style="font-size:12px; color: #35358e;">
+                <b>Date:</b> ${task.date} <b>Time:</b> ${task.time} 
+                ${task.recurrence !== 'none' ? `<em>(${capitalize(task.recurrence)} Repeat)</em>` : ''}
+              </div>
               <div class="actions">
-                <button class="complete-btn" onclick="markDone(${task.id})">${task.done ? 'Mark Undone' : 'Mark Done'}</button>
-                <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
+                <button class="complete-btn" onclick="markDone('${task.id}')">${task.done ? 'Mark Undone' : 'Mark Done'}</button>
+                <button class="delete-btn" onclick="deleteTask('${task.id}')">Delete</button>
               </div>
             </li>
           `;
@@ -244,19 +294,19 @@
 
     function updateSubscriptionUI() {
       if (subscribed) {
-        subscriptionStatus.textContent = 'Thank you for subscribing! Unlimited tasks unlocked.';
+        subscriptionStatus.textContent = 'Thank you for subscribing! Unlimited tasks, recurring events, and reminders unlocked.';
         fwPayBtn.classList.add('disabled');
         fwPayBtn.removeAttribute('href');
         fwPayBtn.style.pointerEvents = 'none';
       } else {
-        subscriptionStatus.textContent = '(Replace with your Flutterwave payment link)';
+        subscriptionStatus.textContent = '';
         fwPayBtn.classList.remove('disabled');
         fwPayBtn.href = "https://flutterwave.com/pay/rhrf1i0bzpkh";
         fwPayBtn.style.pointerEvents = 'auto';
       }
     }
 
-    // For demo: Simulate payment success when clicking subscribe
+    // Simulate subscription on button click for demo
     fwPayBtn.onclick = function(e) {
       if (subscribed) {
         e.preventDefault();
@@ -267,10 +317,39 @@
         subscribed = true;
         localStorage.setItem('pastorSubscribed', 'true');
         updateSubscriptionUI();
-        alert('Subscription active! You can now add unlimited tasks.');
+        scheduleReminders();
+        alert('Subscription active! You can now add unlimited tasks, recurring events, and reminders.');
       } else {
         e.preventDefault();
       }
+    };
+
+    // Capitalize helper
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // Schedules reminders for tasks (only premium)
+    function scheduleReminders() {
+      if (!subscribed) return; // reminders only for subscribers
+
+      // Clear any existing timers (for demo simplicity, reload page will reset)
+      // In full app use external notification or service workers
+
+      const now = new Date();
+      tasks.forEach(task => {
+        if (task.done) return;
+
+        const taskDateTime = new Date(`${task.date}T${task.time}`);
+        const diffMs = taskDateTime - now;
+
+        // Remind only if task is within the next hour
+        if (diffMs > 0 && diffMs <= 3600 * 1000) {
+          setTimeout(() => {
+            alert(`Reminder: "${task.title}" scheduled at ${task.time} today.`);
+          }, diffMs);
+        }
+      });
     }
   </script>
 </body>
